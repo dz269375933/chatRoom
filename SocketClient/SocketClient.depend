@@ -1,0 +1,7 @@
+# depslib dependency file v1.0
+1549904649 source:c:\users\dz\desktop\network\socket\socketclient\client.c
+	<stdio.h>
+	<string.h>
+	<stdlib.h>
+	<winsock2.h>
+
