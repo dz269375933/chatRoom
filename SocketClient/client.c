@@ -69,14 +69,7 @@ int main(int argc, char* argv[])
             WSACleanup();
             break;
         }
-        /*
-        char charArray[500];
-        strcat(charArray,"From ");
-        strcat(charArray,name);
-        strcat(charArray,":");
-        strcat(charArray,sendData);
-        */
-        //printf("sendData is %s\n",sendData);
+        //printf("sendData:%s",sendData);
 		send(sclient, sendData, strlen(sendData), 0);
 	}
 
