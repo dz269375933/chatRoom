@@ -54,9 +54,38 @@ int main(int argc, char* argv[])
 	}
 	//for (int i = 0; i < 50; i++)
 	//{
-    printf("please input your name :");
-    gets(name);
-    send(sclient, name, strlen(name), 0);
+
+    while(1){
+        printf("please input your name :");
+        gets(name);
+        send(sclient, name, strlen(name), 0);
+        char password[20];
+        printf("please input your password :");
+        gets(password);
+        send(sclient, password, strlen(password), 0);
+
+        char recData[100];
+        int ret = recv(sclient, recData, 100, 0);
+        //printf("%d\n",ret);
+
+        if (ret > 0)
+        {
+            recData[ret] = 0x00;
+            if(strcmp(recData,"ACK")==0){
+                printf("Welcome!\n");
+                break;
+            }
+            printf("%s\n",recData);
+            //printf("%s\r\n",charArray);
+        }else{
+            printf("receive error.\n");
+            closesocket(socket);
+            WSACleanup();
+            return -1;
+        }
+    }
+
+
     HANDLE handle=_beginthreadex(NULL, 0, (unsigned int (_stdcall*)(void *))Client_thread,sclient, 0, NULL);
 	while(1){
         char sendData[USER_SEND_MAX];

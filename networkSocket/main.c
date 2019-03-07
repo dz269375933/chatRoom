@@ -1,6 +1,5 @@
 #include <head.h>
-#include <unistd.h>
-#include <errno.h>
+
 struct SocketObject{
     char name[30];
     SOCKET socket;
@@ -12,8 +11,10 @@ struct RingObject{
     struct RingObject *next;
 };
 */
-struct SocketObject sockets[THREAD_NUM];
 int g_count;
+
+struct SocketObject sockets[THREAD_NUM];
+
 void getUserList(char userList[]);
 unsigned int _stdcall ThreadFun(void* index);
 int is_begin_with(const char * str1,char *str2);
@@ -43,6 +44,15 @@ int main(int arg,char *argv[])
     char* message,server_reply[2000];
     int recv_size;
     */
+
+    //database
+
+    if(insertData()==0){
+        return 0;
+    }
+
+
+
 
     printf("Initialising Winsock ...\n ");
     if(WSAStartup(MAKEWORD(2,2),&wsa) !=0)
@@ -82,12 +92,13 @@ int main(int arg,char *argv[])
 
 
     c=sizeof(struct sockaddr_in);
-
+    //signal(SIGPIPE,SIG_IGN);
     while(1){
         SOCKET new_socket = accept(s,(struct sockaddr *)&client,&c);
         if(new_socket == INVALID_SOCKET || g_count>=THREAD_NUM){
             printf("accept error\n");
-            closesocket(new_socket);
+            //still need to be done
+            //closesocket(new_socket);
             break;
         }
         printf("connected...\r\n");
@@ -102,33 +113,94 @@ int main(int arg,char *argv[])
 }
 unsigned int _stdcall ThreadFun(void* index){
     int private_index=-1;
+    sqlite3 *db;
+    char *err_msg=0;
+    int rc = sqlite3_open("dzData", &db);
+    printf("\nRC open Database = %d\n",rc);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return 0;
+    }
 
     int thisIndex=*(int *)index;
     SOCKET new_socket=sockets[thisIndex].socket;
     char nameArray[20];
-    int ret = recv(new_socket, nameArray, 20, 0);
-    if(ret <= 0){
-        printf("receive error.");
-        closesocket(new_socket);
-        WSACleanup();
-        return -1;
-    }else{
-        nameArray[ret]=0x00;
-        strcpy(sockets[thisIndex].name,nameArray);
-        int k;
-        for(k=0;k<=g_count;k++){
-            if(strcmp(sockets[k].ring,nameArray)==0){
-                char * message[200];
-                message[0]=0x00;
-                strcat(message,"Ring :");
-                strcat(message,nameArray);
-                strcat(message," connect.");
-                printf("%s\n",message);
-                send(sockets[k].socket, message, strlen(message), 0);
+    char password[20];
+    while(1){
+        int ret = recv(new_socket, nameArray, 20, 0);
+        if(ret <= 0){
+            if(thisIndex==g_count){
+                g_count--;
+            }else{
+                sockets[thisIndex]=sockets[g_count--];
+            }
+            printf("receive error.Closing thread and socket\n");
+            closesocket(new_socket);
+            WSACleanup();
+            return -1;
+        } else{
+            nameArray[ret]=0x00;
+            ret=recv(new_socket,password,20,0);
+            if(ret <= 0){
+                if(thisIndex==g_count){
+                g_count--;
+                }else{
+                sockets[thisIndex]=sockets[g_count--];
+                }
+                printf("receive error.\n");
+                closesocket(new_socket);
+                WSACleanup();
+                return -1;
+            }
+            password[ret]=0x00;
+
+            //search database
+            sqlite3_stmt * res;
+            char *sql = "SELECT Name,Password FROM User WHERE Name = @id";
+            int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);
+            if (rc == SQLITE_OK) {
+                int idx = sqlite3_bind_parameter_index(res, "@id");
+                rc=sqlite3_bind_text(res, idx, nameArray, -1, SQLITE_STATIC);     // the string is static
+                printf("\nRC sqltite_exec = %d -> %s\n",rc,sql);
+            } else {
+                fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
+            }
+            //printf("input name :%s\n",nameArray);
+            //printf("input password:%s\n",password);
+            int step =sqlite3_step(res);
+            if(step!=100 || strcmp(password,sqlite3_column_text(res, 1))!=0){
+                printf("Password :%s..\n",sqlite3_column_text(res, 1));
+                printf("input:%s..\n",password);
+                char * message="Wrong username or password.";
+                send(sockets[thisIndex].socket, message, strlen(message), 0);
+            }else{
+                printf("ACK\n",sqlite3_column_text(res, 1));
+                char * returnAck="ACK";
+                send(sockets[thisIndex].socket, returnAck, strlen(returnAck), 0);
+                break;
             }
         }
-        //sockets[thisIndex].name=nameArray;
     }
+    //end loop
+
+
+    //broadcast ring;
+    strcpy(sockets[thisIndex].name,nameArray);
+    int k;
+    for(k=0;k<=g_count;k++){
+        if(strcmp(sockets[k].ring,nameArray)==0){
+            char * message[200];
+            message[0]=0x00;
+            strcat(message,"Ring :");
+            strcat(message,nameArray);
+            strcat(message," connect.");
+            printf("%s\n",message);
+            send(sockets[k].socket, message, strlen(message), 0);
+        }
+    }
+    //sockets[thisIndex].name=nameArray;
+
     while(1){
         char revData[USER_SEND_MAX];
         int ret = recv(new_socket, revData, USER_SEND_MAX, 0);
@@ -215,7 +287,7 @@ unsigned int _stdcall ThreadFun(void* index){
                 int i;
                 for(i=0;i<=g_count;i++){
                     if(strcmp(sockets[i].name,name)==0){
-                        char* message="He\She is online.";
+                        char* message="He\\She is online.";
                         send(sockets[thisIndex].socket, message, strlen(message), 0);
                     }
                 }
@@ -305,4 +377,37 @@ int is_begin_with(const char * str1,char *str2)
     i++;
   }
   return 1;
+}
+int insertData(){
+    sqlite3 *db;
+    char *err_msg=0;
+    int rc = sqlite3_open("dzData", &db);
+    printf("\nRC open Database = %d\n",rc);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return 0;
+    }
+    char *sql = "DROP TABLE IF EXISTS User;"
+                "CREATE TABLE User(Id INT, Name TEXT, Password TEXT);"
+                "INSERT INTO User VALUES(1, 'dz', '123');"
+                "INSERT INTO User VALUES(2, 'han', '123');"
+                "INSERT INTO User VALUES(3, 'haipen', '123');"
+                "INSERT INTO User VALUES(4, 'aaa', '123');"
+                "INSERT INTO User VALUES(5, 'bbb', '123');"
+                "INSERT INTO User VALUES(6, 'ccc', '123');"
+                "INSERT INTO User VALUES(7, 'ddd', '123');"
+                "INSERT INTO User VALUES(8, 'eee', '123');";
+    rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
+    printf("\nRC sqltite_exec = %d\n\n",rc);
+    if (rc != SQLITE_OK ) {
+        fprintf(stderr, "SQL error: %s\n", err_msg);
+        sqlite3_free(err_msg);
+        sqlite3_close(db);
+        return 0;
+    } else {
+        fprintf(stdout, "Table created successfully\n");
+    }
+    return 1;
+
 }
