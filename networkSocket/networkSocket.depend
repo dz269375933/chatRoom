@@ -2,6 +2,8 @@
 1551881394 source:c:\users\dz\desktop\network\networksocket\main.c
 	<head.h>
 
-1551899317 source:c:\users\dz\desktop\network\chatroom\networksocket\main.c
+1551908487 source:c:\users\dz\desktop\network\chatroom\networksocket\main.c
 	<head.h>
+	<unistd.h>
+	<errno.h>
 

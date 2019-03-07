@@ -1,8 +1,17 @@
 #include <head.h>
+#include <unistd.h>
+#include <errno.h>
 struct SocketObject{
     char name[30];
     SOCKET socket;
+    char ring[30];
 };
+/*
+struct RingObject{
+    char *name;
+    struct RingObject *next;
+};
+*/
 struct SocketObject sockets[THREAD_NUM];
 int g_count;
 void getUserList(char userList[]);
@@ -106,6 +115,18 @@ unsigned int _stdcall ThreadFun(void* index){
     }else{
         nameArray[ret]=0x00;
         strcpy(sockets[thisIndex].name,nameArray);
+        int k;
+        for(k=0;k<=g_count;k++){
+            if(strcmp(sockets[k].ring,nameArray)==0){
+                char * message[200];
+                message[0]=0x00;
+                strcat(message,"Ring :");
+                strcat(message,nameArray);
+                strcat(message," connect.");
+                printf("%s\n",message);
+                send(sockets[k].socket, message, strlen(message), 0);
+            }
+        }
         //sockets[thisIndex].name=nameArray;
     }
     while(1){
@@ -173,6 +194,75 @@ unsigned int _stdcall ThreadFun(void* index){
             private_index=-1;
             char* message="Success be private.";
             send(sockets[thisIndex].socket, message, strlen(message), 0);
+            continue;
+        }else if(is_begin_with(revData,"#Ring")==1){
+            printf("I got Ring.\n");
+            char name[50];
+            name[0]=0x00;
+            char *p;
+            strtok(revData," ");
+            while((p=strtok(NULL," "))!=NULL){
+                    //printf(p);
+                //printf("\n");
+               strcat(name,p);
+               strcat(name," ");
+            }
+            if(strlen(name)==0){
+                char* errorSend="Sorry, Please input name after #Ring (there should be a space after Ring).";
+                send(sockets[thisIndex].socket, errorSend, strlen(errorSend), 0);
+            }else{
+                name[strlen(name)-1]=0x00;
+                int i;
+                for(i=0;i<=g_count;i++){
+                    if(strcmp(sockets[i].name,name)==0){
+                        char* message="He\She is online.";
+                        send(sockets[thisIndex].socket, message, strlen(message), 0);
+                    }
+                }
+                if(i<=g_count)continue;
+                strcpy(sockets[thisIndex].ring,name);
+                //printf("%p",sockets[thisIndex].ring);
+                /*
+                if(sockets[thisIndex].ring==NULL){
+                    struct RingObject *head=(struct RingObject*)malloc(sizeof(struct RingObject));
+                    strcpy(head->name,name);
+                    head->next=NULL;
+                    sockets[thisIndex].ring=head;
+                    free(head);
+                    printf("first\n");
+
+                }else{
+                    struct RingObject *q;
+                    q=sockets[thisIndex].ring;
+
+                    while(q->next != NULL){
+                        printf("%s\n",q->name);
+                        q=q->next;
+                    }
+                    printf("%s\n",name);
+                    printf("236\n");
+                    struct RingObject *node=(struct RingObject*)malloc(sizeof(struct RingObject));
+                    printf("237\n");
+                    printf("%p",node);
+                    printf("%s\n",node->name);
+                    strcpy(node->name,name);
+                    printf("238\n");
+
+
+                    printf("******* %s\n",strerror(errno));
+                    printf("%p",node);
+
+                    printf("sss\n");
+                    node->next=NULL;
+                    p->next=node;
+                    printf("sss\n");
+                    p=sockets[thisIndex].ring;
+
+
+                }*/
+                char* message="Success save ring.";
+                send(sockets[thisIndex].socket, message, strlen(message), 0);
+            }
             continue;
         }
         //printf("%s\n",revData);
