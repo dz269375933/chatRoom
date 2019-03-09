@@ -12,8 +12,10 @@ struct RingObject{
 };
 */
 int g_count;
+const char* FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
 
 struct SocketObject sockets[THREAD_NUM];
+void viewFiles(char * path,char * result);
 
 void getUserList(char userList[]);
 unsigned int _stdcall ThreadFun(void* index);
@@ -133,11 +135,7 @@ unsigned int _stdcall ThreadFun(void* index){
     while(1){
         int ret = recv(new_socket, nameArray, 20, 0);
         if(ret <= 0){
-            if(thisIndex==g_count){
-                g_count--;
-            }else{
-                sockets[thisIndex]=sockets[g_count--];
-            }
+
             printf("receive error.Closing thread and socket\n");
             closesocket(new_socket);
             WSACleanup();
@@ -146,11 +144,6 @@ unsigned int _stdcall ThreadFun(void* index){
             nameArray[ret]=0x00;
             ret=recv(new_socket,password,20,0);
             if(ret <= 0){
-                if(thisIndex==g_count){
-                g_count--;
-                }else{
-                sockets[thisIndex]=sockets[g_count--];
-                }
                 printf("receive error.\n");
                 closesocket(new_socket);
                 WSACleanup();
@@ -206,6 +199,7 @@ unsigned int _stdcall ThreadFun(void* index){
 
     while(1){
         char revData[USER_SEND_MAX];
+        revData[0]=0x00;
         int ret = recv(new_socket, revData, USER_SEND_MAX, 0);
         if(ret <= 0){
             printf("connect error...\n");
@@ -250,9 +244,7 @@ unsigned int _stdcall ThreadFun(void* index){
                 int j;
                 printf(name);
                 for(j=0;j<=g_count;j++){
-
                     if(strcmp(sockets[j].name,name)==0)break;
-
                 }
                 if(j>g_count){
                     char* errorSend="Sorry, I can't find name in user list.";
@@ -305,7 +297,7 @@ unsigned int _stdcall ThreadFun(void* index){
             printf("I got file.\n");
             char * fileName[50];
             fileName[0]=0x00;
-            char *tempName;
+            char *tempName=NULL;
             strtok(revData," ");
             tempName=strtok(NULL," ");
             strcat(fileName,fileTitle);
@@ -315,12 +307,14 @@ unsigned int _stdcall ThreadFun(void* index){
                 send(sockets[thisIndex].socket, wrongMessage, strlen(wrongMessage), 0);
             }else{
                 char* sendAck[100];
+                sendAck[0]=0x00;
                 strcat(sendAck,"UPLOAD_ACK:");
                 strcat(sendAck,tempName);
                 send(sockets[thisIndex].socket, sendAck, strlen(sendAck), 0);
                 printf("try to save file %s\n",tempName);
                 FILE* fp;
                 char data[FILE_DATA_MAX];
+                data[0]=0x00;
                 fp=fopen(fileName,"wb");
                 if(fp==NULL){
                     printf("fail to save file named %s.\n",fileName);
@@ -352,7 +346,70 @@ unsigned int _stdcall ThreadFun(void* index){
                 fclose(fp);
             }
             continue;
+            // end #TrfU
+        }else if(strcmp(revData,"#ListF")==0){
+            char path[200];
+            path[0]=0x00;
+            char result[1024];
+            result[0]=0x00;
+            strcat(path,"file");
+            viewFiles(path,result);
+            //printf("files:%s\n",result);
+            send(sockets[thisIndex].socket,result,strlen(result),0);
+            continue;
+        }else if(is_begin_with(revData,"#TrfD")==1){
+
+            char * fileName[50];
+            fileName[0]=0x00;
+            char * p=NULL;
+            //fileName[0]=0x00;
+            //char *tempName;
+            strcat(fileName,"file/");
+            strtok(revData," ");
+            p=strtok(NULL," ");
+            strcat(fileName,p);
+            printf("%s\n",fileName);
+            FILE *fp;
+            char* data[FILE_DATA_MAX];
+            data[0]=0x00;
+
+            fp=fopen(fileName,"rb");
+            if(fp==NULL){
+                char* message="file dose not exist.";
+                send(sockets[thisIndex].socket,message,strlen(message),0);
+                printf("%s\n",message);
+                continue;
+            }
+           // char * message="FILE_SEND";
+            send(sockets[thisIndex].socket,FILE_SEND,strlen(FILE_SEND),0);
+            Sleep(500);
+            send(sockets[thisIndex].socket,p,strlen(p),0);
+
+            while(1){
+                memset((void *)data,0,sizeof(data));
+                //printf("sss\n");
+                int length=fread(data,1,sizeof(data),fp);
+                if(length==0){
+                    Sleep(500);
+                    send(sockets[thisIndex].socket,file_end_ack,strlen(file_end_ack),0);
+                    printf("File send Success\n");
+                    break;
+                }
+                //printf("%s\n",data);
+                int ret=send(sockets[thisIndex].socket,data,length,0);
+                //putchar('.');
+                if(ret==SOCKET_ERROR){
+                    char * message="Failed to send file.It may be caused by incomplete file.";
+                    printf("%s\n",message);
+                    send(sockets[thisIndex].socket,message,strlen(message),0);
+                    break;
+                }
+            }
+            fclose(fp);
+            continue;
         }
+
+
         //printf("%s\n",revData);
         int i;
         char broadcast[BROADCAST_MAX];
@@ -426,4 +483,25 @@ int insertData(){
     }
     return 1;
 
+}
+void viewFiles(char * path,char * result){
+    struct _finddata_t files;
+    //char cFileAddr[300];
+    long File_Handle;
+    strcat(path,"/*.*");
+    //printf("%s\n",path);
+    //int i=0;
+    File_Handle = _findfirst(path,&files);
+    if(File_Handle==-1)
+    {
+        strcat(result,"Not found.");
+    }else{
+        do{
+            if(files.name[0]!='.' && files.attrib!=_A_SUBDIR){
+                strcat(result,files.name);
+                strcat(result,"\n");
+                //printf("find a file:%s\n",files.name);
+            }
+        }while( _findnext(File_Handle,&files)==0);
+    }
 }
