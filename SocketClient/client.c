@@ -5,7 +5,12 @@
 #include <stdlib.h>
 #define USER_SEND_MAX 280
 #define BROADCAST_MAX 500
+#define FILE_DATA_MAX 8092
+#include <ctype.h>
 char name[20];
+int is_begin_with(const char* s1,char* s2);
+int has_space(char *s);
+const char * file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
 unsigned int _stdcall Client_thread(SOCKET socket){
     while(1){
 		char recData[BROADCAST_MAX];
@@ -13,7 +18,6 @@ unsigned int _stdcall Client_thread(SOCKET socket){
 		if (ret > 0)
 		{
 		    recData[ret] = 0x00;
-			printf("%s\n",recData);
 			//printf("%s\r\n",charArray);
 		}else{
             printf("receive error.");
@@ -21,7 +25,52 @@ unsigned int _stdcall Client_thread(SOCKET socket){
             WSACleanup();
             return -1;
 		}
+
+		if(is_begin_with(recData,"UPLOAD_ACK")){
+            char *fileName;
+            strtok(recData,":");
+            fileName=strtok(NULL," ");
+            if(fileName==NULL){
+                printf("receive file name error.\n");
+                continue;
+            }else{
+                //printf("%s\n",p);
+                FILE *fp;
+                char* data[FILE_DATA_MAX];
+
+                fp=fopen(fileName,"rb");
+                if(fp==NULL){
+                    printf("file dose not exist.\n");
+                    continue;
+                }
+
+                while(1){
+                    memset((void *)data,0,sizeof(data));
+                    //printf("sss\n");
+                    int length=fread(data,1,sizeof(data),fp);
+                    if(length==0){
+                        Sleep(500);
+                        send(socket,file_end_ack,strlen(file_end_ack),0);
+                        printf("File send Success\n");
+
+                        break;
+                    }
+                    //printf("%s\n",data);
+                    int ret=send(socket,data,length,0);
+                    //putchar('.');
+                    if(ret==SOCKET_ERROR){
+                        printf("Failed to send file.It may be caused by incomplete file.\n");
+                        break;
+                    }
+                }
+                fclose(fp);
+                continue;
+            }
+		}
+		printf("%s\n",recData);
+
 	}
+	//end loop
 }
 
 int main(int argc, char* argv[])
@@ -75,7 +124,6 @@ int main(int argc, char* argv[])
                 printf("Welcome!\n");
                 break;
             }
-            printf("%s\n",recData);
             //printf("%s\r\n",charArray);
         }else{
             printf("receive error.\n");
@@ -97,6 +145,33 @@ int main(int argc, char* argv[])
             closesocket(sclient);
             WSACleanup();
             break;
+        }else if(is_begin_with(sendData,"#TrfU")==1){
+            if(strlen(sendData)<=6 | has_space(sendData)==0){
+                printf("Please input fileName after a blank space,\n");
+                continue;
+            }
+            char * fileNameMessage[USER_SEND_MAX];
+            strcat(fileNameMessage,sendData);
+            char *fileName;
+            strtok(fileNameMessage," ");
+            fileName=strtok(NULL," ");
+            if(fileName==NULL | strlen(fileName)==0){
+                printf("Please input fileName after a blank space,\n");
+                continue;
+            }
+            FILE *fp;
+            char* data[FILE_DATA_MAX];
+
+            fp=fopen(fileName,"rb");
+            if(fp==NULL){
+                printf("file dose not exist.\n");
+                continue;
+            }
+            fclose(fp);
+            send(sclient, sendData, strlen(sendData), 0);
+            continue;
+
+
         }
         //printf("sendData:%s",sendData);
 		send(sclient, sendData, strlen(sendData), 0);
@@ -105,4 +180,32 @@ int main(int argc, char* argv[])
 
 	system("pause");
 	return 0;
+}
+int is_begin_with(const char * str1,char *str2)
+{
+  if(str1 == NULL || str2 == NULL)
+    return -1;
+  int len1 = strlen(str1);
+  int len2 = strlen(str2);
+  if((len1 < len2) || (len1 == 0 || len2 == 0))
+    return -1;
+  char *p = str2;
+  int i = 0;
+  while(*p != '\0')
+  {
+    if(*p != str1[i])
+      return 0;
+    p++;
+    i++;
+  }
+  return 1;
+}
+int has_space(char* s1){
+    int i;
+    for(i=0;i<strlen(s1);i++){
+        if(isspace(s1[i]))break;
+    }
+    //printf("%d\n",i);
+    if(i<strlen(s1))return 1;
+    else return 0;
 }

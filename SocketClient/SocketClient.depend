@@ -5,9 +5,10 @@
 	<stdlib.h>
 	<winsock2.h>
 
-1551880744 source:c:\users\dz\desktop\network\chatroom\socketclient\client.c
+1552134773 source:c:\users\dz\desktop\network\chatroom\socketclient\client.c
 	<winsock2.h>
 	<windows.h>
 	<STDIO.H>
 	<stdlib.h>
+	<ctype.h>
 

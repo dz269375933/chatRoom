@@ -10,9 +10,9 @@
 #define THREAD_NUM 10
 #define USER_SEND_MAX 280
 #define BROADCAST_MAX 500
+#define FILE_DATA_MAX 8092
 #include <sqlite3.h>
-#include <signal.h>
-#include <unistd.h>
+#include <io.h>
 /*
 struct sockaddr_in
 {

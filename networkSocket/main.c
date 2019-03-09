@@ -36,6 +36,7 @@ int main(int arg,char *argv[])
     SOCKET s;
     struct sockaddr_in server,client;
     int c;
+
     //char* message;
     //HANDLE handle[THREAD_NUM];
     g_count=-1;
@@ -112,6 +113,8 @@ int main(int arg,char *argv[])
     return 0;
 }
 unsigned int _stdcall ThreadFun(void* index){
+    const char* fileTitle="file/";
+    const char* file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
     int private_index=-1;
     sqlite3 *db;
     char *err_msg=0;
@@ -264,7 +267,7 @@ unsigned int _stdcall ThreadFun(void* index){
             continue;
         }else if(strcmp(revData,"#Public")==0){
             private_index=-1;
-            char* message="Success be private.";
+            char* message="Success be public.";
             send(sockets[thisIndex].socket, message, strlen(message), 0);
             continue;
         }else if(is_begin_with(revData,"#Ring")==1){
@@ -293,47 +296,60 @@ unsigned int _stdcall ThreadFun(void* index){
                 }
                 if(i<=g_count)continue;
                 strcpy(sockets[thisIndex].ring,name);
-                //printf("%p",sockets[thisIndex].ring);
-                /*
-                if(sockets[thisIndex].ring==NULL){
-                    struct RingObject *head=(struct RingObject*)malloc(sizeof(struct RingObject));
-                    strcpy(head->name,name);
-                    head->next=NULL;
-                    sockets[thisIndex].ring=head;
-                    free(head);
-                    printf("first\n");
 
-                }else{
-                    struct RingObject *q;
-                    q=sockets[thisIndex].ring;
-
-                    while(q->next != NULL){
-                        printf("%s\n",q->name);
-                        q=q->next;
-                    }
-                    printf("%s\n",name);
-                    printf("236\n");
-                    struct RingObject *node=(struct RingObject*)malloc(sizeof(struct RingObject));
-                    printf("237\n");
-                    printf("%p",node);
-                    printf("%s\n",node->name);
-                    strcpy(node->name,name);
-                    printf("238\n");
-
-
-                    printf("******* %s\n",strerror(errno));
-                    printf("%p",node);
-
-                    printf("sss\n");
-                    node->next=NULL;
-                    p->next=node;
-                    printf("sss\n");
-                    p=sockets[thisIndex].ring;
-
-
-                }*/
                 char* message="Success save ring.";
                 send(sockets[thisIndex].socket, message, strlen(message), 0);
+            }
+            continue;
+        }else if(is_begin_with(revData,"#TrfU")==1){
+            printf("I got file.\n");
+            char * fileName[50];
+            fileName[0]=0x00;
+            char *tempName;
+            strtok(revData," ");
+            tempName=strtok(NULL," ");
+            strcat(fileName,fileTitle);
+            strcat(fileName,tempName);
+            if(!access(fileName,0)){
+                char * wrongMessage="Sorry, file exits.Please change your fileName.";
+                send(sockets[thisIndex].socket, wrongMessage, strlen(wrongMessage), 0);
+            }else{
+                char* sendAck[100];
+                strcat(sendAck,"UPLOAD_ACK:");
+                strcat(sendAck,tempName);
+                send(sockets[thisIndex].socket, sendAck, strlen(sendAck), 0);
+                printf("try to save file %s\n",tempName);
+                FILE* fp;
+                char data[FILE_DATA_MAX];
+                fp=fopen(fileName,"wb");
+                if(fp==NULL){
+                    printf("fail to save file named %s.\n",fileName);
+                    continue;
+                }
+                printf("start to save file...\n");
+                while(1){
+                    memset(data,0,sizeof(data));
+                    //char * temp[FILE_DATA_MAX];
+                    int length=recv(sockets[thisIndex].socket,data,sizeof(data),0);
+                    if(length==SOCKET_ERROR){
+                        char * message="Fail to save file.It may be caused by incomplete file.";
+                        printf("%s\n",message);
+                        send(sockets[thisIndex].socket,message,strlen(message),0);
+                        break;
+                    }else if(strcmp(data,file_end_ack)==0){
+                        char * message="Save file success.";
+                        printf("%s\n",message);
+                        send(sockets[thisIndex].socket,message,strlen(message),0);
+                        break;
+                    }else{
+                        if(fwrite(data,1,length,fp)<length){
+                            printf("Write Failed.\n");
+                            break;
+                        }
+                    }
+                }
+                //printf("finish.\n");
+                fclose(fp);
             }
             continue;
         }
