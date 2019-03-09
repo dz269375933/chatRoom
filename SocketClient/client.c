@@ -1,6 +1,5 @@
 #include <winsock2.h>
 #include <windows.h>
-#pragma comment(lib,"ws2_32.lib")
 #include <STDIO.H>
 #include <stdlib.h>
 #define USER_SEND_MAX 280
@@ -12,7 +11,12 @@ int is_begin_with(const char* s1,char* s2);
 int has_space(char *s);
 const char * file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
 const char * FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
-unsigned int _stdcall Client_thread(SOCKET socket){
+unsigned int _stdcall Client_thread(void* socket);
+
+
+
+unsigned int _stdcall Client_thread(void* s){
+    SOCKET socket=*(SOCKET*)s;
     while(1){
 		char recData[BROADCAST_MAX];
 		int ret = recv(socket, recData, BROADCAST_MAX, 0);
@@ -37,7 +41,7 @@ unsigned int _stdcall Client_thread(SOCKET socket){
             }else{
                 //printf("%s\n",p);
                 FILE *fp;
-                char* data[FILE_DATA_MAX];
+                char data[FILE_DATA_MAX];
 
                 fp=fopen(fileName,"rb");
                 if(fp==NULL){
@@ -112,11 +116,12 @@ unsigned int _stdcall Client_thread(SOCKET socket){
             //printf("finish.\n");
             fclose(fp);
             continue;
-		};
+		}
 		printf("%s\n",recData);
 
 	}
 	//end loop
+	return 0;
 }
 
 int main(int argc, char* argv[])
@@ -173,14 +178,14 @@ int main(int argc, char* argv[])
             //printf("%s\r\n",charArray);
         }else{
             printf("receive error.\n");
-            closesocket(socket);
+            closesocket((int)socket);
             WSACleanup();
             return -1;
         }
     }
 
 
-    HANDLE handle=_beginthreadex(NULL, 0, (unsigned int (_stdcall*)(void *))Client_thread,sclient, 0, NULL);
+    HANDLE handle=_beginthreadex(NULL, 0, &Client_thread,(void *)&sclient, 0,NULL);
 	while(1){
         char sendData[USER_SEND_MAX];
         //printf("$%s: ",name);
@@ -192,21 +197,21 @@ int main(int argc, char* argv[])
             WSACleanup();
             break;
         }else if(is_begin_with(sendData,"#TrfU")==1){
-            if(strlen(sendData)<=6 | has_space(sendData)==0){
+            if((strlen(sendData)<=6) | (has_space(sendData)==0)){
                 printf("Please input fileName after a blank space,\n");
                 continue;
             }
-            char * fileNameMessage[USER_SEND_MAX];
+            char fileNameMessage[USER_SEND_MAX];
             strcat(fileNameMessage,sendData);
             char *fileName;
             strtok(fileNameMessage," ");
             fileName=strtok(NULL," ");
-            if(fileName==NULL | strlen(fileName)==0){
+            if((fileName==NULL) | (strlen(fileName)==0)){
                 printf("Please input fileName after a blank space,\n");
                 continue;
             }
             FILE *fp;
-            char* data[FILE_DATA_MAX];
+            //char data[FILE_DATA_MAX];
 
             fp=fopen(fileName,"rb");
             if(fp==NULL){
@@ -218,6 +223,20 @@ int main(int argc, char* argv[])
             continue;
 
 
+        }else if(strcmp(sendData,"#Help")==0){
+             char * message="----------------------\n"
+            "#Exit\tExit\n"
+            "#Help\tList command\n"
+            "#ListU\tList User in server\n"
+            "#ListF\tList files in server\n"
+            "#TrfU <filename>\ttransfert Upload file in a server\n"
+            "#TrfD <filename>\ttransfert Download file in a server\n"
+            "#Private <Username>\tcommute to private\n"
+            "#Public\t\t\tcommute to public\n"
+            "#Ring <username>\tnotification if user is connect\n"
+            "---------------------\n";
+            printf("%s",message);
+            continue;
         }
         //printf("sendData:%s",sendData);
 		send(sclient, sendData, strlen(sendData), 0);

@@ -13,13 +13,15 @@ struct RingObject{
 */
 int g_count;
 const char* FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
+char* change_index="K3LvzpYnSQ27wtwM";
 
-struct SocketObject sockets[THREAD_NUM];
+volatile struct SocketObject sockets[THREAD_NUM];
 void viewFiles(char * path,char * result);
 
 void getUserList(char userList[]);
 unsigned int _stdcall ThreadFun(void* index);
 int is_begin_with(const char * str1,char *str2);
+int insertData();
 
 
 
@@ -119,9 +121,9 @@ unsigned int _stdcall ThreadFun(void* index){
     const char* file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
     int private_index=-1;
     sqlite3 *db;
-    char *err_msg=0;
+    //char *err_msg=0;
     int rc = sqlite3_open("dzData", &db);
-    printf("\nRC open Database = %d\n",rc);
+    //printf("\nRC open Database = %d\n",rc);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
@@ -158,20 +160,20 @@ unsigned int _stdcall ThreadFun(void* index){
             if (rc == SQLITE_OK) {
                 int idx = sqlite3_bind_parameter_index(res, "@id");
                 rc=sqlite3_bind_text(res, idx, nameArray, -1, SQLITE_STATIC);     // the string is static
-                printf("\nRC sqltite_exec = %d -> %s\n",rc,sql);
+                //printf("\nRC sqltite_exec = %d -> %s\n",rc,sql);
             } else {
                 fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
             }
             //printf("input name :%s\n",nameArray);
             //printf("input password:%s\n",password);
             int step =sqlite3_step(res);
-            if(step!=100 || strcmp(password,sqlite3_column_text(res, 1))!=0){
-                printf("Password :%s..\n",sqlite3_column_text(res, 1));
-                printf("input:%s..\n",password);
+            if(step!=100 || strcmp((const char *)password,(const char *)sqlite3_column_text(res, 1))!=0){
+                //printf("Password :%s..\n",sqlite3_column_text(res, 1));
+                //printf("input:%s..\n",password);
                 char * message="Wrong username or password.";
                 send(sockets[thisIndex].socket, message, strlen(message), 0);
             }else{
-                printf("ACK\n",sqlite3_column_text(res, 1));
+                //printf("ACK\n",sqlite3_column_text(res, 1));
                 char * returnAck="ACK";
                 send(sockets[thisIndex].socket, returnAck, strlen(returnAck), 0);
                 break;
@@ -186,7 +188,7 @@ unsigned int _stdcall ThreadFun(void* index){
     int k;
     for(k=0;k<=g_count;k++){
         if(strcmp(sockets[k].ring,nameArray)==0){
-            char * message[200];
+            char  message[200];
             message[0]=0x00;
             strcat(message,"Ring :");
             strcat(message,nameArray);
@@ -212,10 +214,33 @@ unsigned int _stdcall ThreadFun(void* index){
             if(thisIndex==g_count){
                 g_count--;
             }else{
-                sockets[thisIndex]=sockets[g_count--];
+                /*
+                char changeInstruct[30];
+                changeInstruct[0]=0x00;
+                strcat(changeInstruct,change_index);
+                strcat(changeInstruct,":");
+                char iToChar[2];
+                itoa(thisIndex,iToChar,10);
+                strcat(changeInstruct,iToChar);
+                for(int i=0;i<g_count;i++){
+                   send(sockets[i].socket,changeInstruct,strlen(changeInstruct),0);
+                }*/
+
+                //sockets[thisIndex]=sockets[g_count--];
             }
             printf("a socket is closed.\n");
             return 0;
+        /*
+        }else if(is_begin_with(revData,change_index)==1){
+            if(thisIndex==g_count){
+                //char tempIndex[10];
+                strtok(revData,":");
+                char *p=strtok(NULL,":");
+                int newIndex=atoi((const char*)p);
+                printf("%d index change to %d\n",thisIndex,newIndex);
+                thisIndex=newIndex;
+            }
+            continue;*/
         }else if(strcmp(revData,"#ListU")==0){
             char userList[1000];
             getUserList(userList);
@@ -295,7 +320,7 @@ unsigned int _stdcall ThreadFun(void* index){
             continue;
         }else if(is_begin_with(revData,"#TrfU")==1){
             printf("I got file.\n");
-            char * fileName[50];
+            char fileName[50];
             fileName[0]=0x00;
             char *tempName=NULL;
             strtok(revData," ");
@@ -306,7 +331,7 @@ unsigned int _stdcall ThreadFun(void* index){
                 char * wrongMessage="Sorry, file exits.Please change your fileName.";
                 send(sockets[thisIndex].socket, wrongMessage, strlen(wrongMessage), 0);
             }else{
-                char* sendAck[100];
+                char sendAck[100];
                 sendAck[0]=0x00;
                 strcat(sendAck,"UPLOAD_ACK:");
                 strcat(sendAck,tempName);
@@ -359,7 +384,7 @@ unsigned int _stdcall ThreadFun(void* index){
             continue;
         }else if(is_begin_with(revData,"#TrfD")==1){
 
-            char * fileName[50];
+            char  fileName[50];
             fileName[0]=0x00;
             char * p=NULL;
             //fileName[0]=0x00;
@@ -368,9 +393,9 @@ unsigned int _stdcall ThreadFun(void* index){
             strtok(revData," ");
             p=strtok(NULL," ");
             strcat(fileName,p);
-            printf("%s\n",fileName);
+            //printf("%s\n",fileName);
             FILE *fp;
-            char* data[FILE_DATA_MAX];
+            char data[FILE_DATA_MAX];
             data[0]=0x00;
 
             fp=fopen(fileName,"rb");
@@ -455,7 +480,7 @@ int insertData(){
     sqlite3 *db;
     char *err_msg=0;
     int rc = sqlite3_open("dzData", &db);
-    printf("\nRC open Database = %d\n",rc);
+    //printf("\nRC open Database = %d\n",rc);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
@@ -472,7 +497,7 @@ int insertData(){
                 "INSERT INTO User VALUES(7, 'ddd', '123');"
                 "INSERT INTO User VALUES(8, 'eee', '123');";
     rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
-    printf("\nRC sqltite_exec = %d\n\n",rc);
+    //printf("\nRC sqltite_exec = %d\n\n",rc);
     if (rc != SQLITE_OK ) {
         fprintf(stderr, "SQL error: %s\n", err_msg);
         sqlite3_free(err_msg);
