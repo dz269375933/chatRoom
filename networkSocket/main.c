@@ -2,6 +2,7 @@
 
 struct SocketObject{
     char name[30];
+    unsigned address;
     SOCKET socket;
     char ring[30];
 };
@@ -15,11 +16,13 @@ int g_count;
 const char* FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
 char* change_index="K3LvzpYnSQ27wtwM";
 
-volatile struct SocketObject sockets[THREAD_NUM];
+struct SocketObject sockets[THREAD_NUM];
 void viewFiles(char * path,char * result);
+int findThisIndex(unsigned address);
+void saveLog(char * message);
 
 void getUserList(char userList[]);
-unsigned int _stdcall ThreadFun(void* index);
+unsigned int _stdcall ThreadFun();
 int is_begin_with(const char * str1,char *str2);
 int insertData();
 
@@ -106,17 +109,32 @@ int main(int arg,char *argv[])
             //closesocket(new_socket);
             break;
         }
-        printf("connected...\r\n");
+        time_t rawtime;
+        struct tm * timeinfo;
+        time(&rawtime);
+        timeinfo=localtime(&rawtime);
+        char *ipv4=inet_ntoa(client.sin_addr);
+        printf("@%s connected...\n",ipv4);
+        char saveMessage[50];
+        sprintf(saveMessage,("Time:%s\t@%s connected\r\n"),asctime(timeinfo),ipv4);
+        printf("%s",saveMessage);
+        saveLog(saveMessage);
+
+
+        unsigned threadAddress;
+        _beginthreadex(NULL, 0, (unsigned int (__stdcall *)(void *))ThreadFun, NULL, 0, &threadAddress);
         struct SocketObject socketObject;
+        socketObject.address=threadAddress;
         socketObject.socket=new_socket;
         sockets[++g_count]=socketObject;
-        _beginthreadex(NULL, 0, (unsigned int (__stdcall *)(void *))ThreadFun, &g_count, 0, NULL);
+
 
     }
     WSACleanup();
     return 0;
 }
-unsigned int _stdcall ThreadFun(void* index){
+unsigned int _stdcall ThreadFun(){
+    unsigned thisId=GetCurrentThreadId();
     const char* fileTitle="file/";
     const char* file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
     int private_index=-1;
@@ -130,10 +148,11 @@ unsigned int _stdcall ThreadFun(void* index){
         return 0;
     }
 
-    int thisIndex=*(int *)index;
-    SOCKET new_socket=sockets[thisIndex].socket;
+    //int thisIndex=*(int *)index;
+    SOCKET new_socket=sockets[findThisIndex(thisId)].socket;
     char nameArray[20];
     char password[20];
+
     while(1){
         int ret = recv(new_socket, nameArray, 20, 0);
         if(ret <= 0){
@@ -167,15 +186,23 @@ unsigned int _stdcall ThreadFun(void* index){
             //printf("input name :%s\n",nameArray);
             //printf("input password:%s\n",password);
             int step =sqlite3_step(res);
+            time_t rawtime;
+            struct tm * timeinfo;
+            time ( &rawtime );
+            timeinfo = localtime ( &rawtime );
             if(step!=100 || strcmp((const char *)password,(const char *)sqlite3_column_text(res, 1))!=0){
-                //printf("Password :%s..\n",sqlite3_column_text(res, 1));
-                //printf("input:%s..\n",password);
                 char * message="Wrong username or password.";
-                send(sockets[thisIndex].socket, message, strlen(message), 0);
+                send(new_socket, message, strlen(message), 0);
+                char saveLogMessage[100];
+                sprintf(saveLogMessage,("Time:%s\t%s login failed\n"),asctime(timeinfo),nameArray);
+                saveLog(saveLogMessage);
             }else{
                 //printf("ACK\n",sqlite3_column_text(res, 1));
                 char * returnAck="ACK";
-                send(sockets[thisIndex].socket, returnAck, strlen(returnAck), 0);
+                send(new_socket, returnAck, strlen(returnAck), 0);
+                char saveLogMessage[100];
+                sprintf(saveLogMessage,("Time:%s\t%s login success\n"),asctime(timeinfo),nameArray);
+                saveLog(saveLogMessage);
                 break;
             }
         }
@@ -184,7 +211,7 @@ unsigned int _stdcall ThreadFun(void* index){
 
 
     //broadcast ring;
-    strcpy(sockets[thisIndex].name,nameArray);
+    strcpy(sockets[findThisIndex(thisId)].name,nameArray);
     int k;
     for(k=0;k<=g_count;k++){
         if(strcmp(sockets[k].ring,nameArray)==0){
@@ -210,7 +237,15 @@ unsigned int _stdcall ThreadFun(void* index){
             return -1;
         }
         revData[ret] = 0x00;
+        int thisIndex=findThisIndex(thisId);
         if(strcmp(revData,"#Exit")==0){
+            time_t rawtime;
+            struct tm * timeinfo;
+            time ( &rawtime );
+            timeinfo = localtime (&rawtime);
+            char saveLogMessage[100];
+            sprintf(saveLogMessage,("Time:%s%s log out.\n"),asctime(timeinfo),sockets[thisIndex].name);
+            saveLog(saveLogMessage);
             if(thisIndex==g_count){
                 g_count--;
             }else{
@@ -226,7 +261,7 @@ unsigned int _stdcall ThreadFun(void* index){
                    send(sockets[i].socket,changeInstruct,strlen(changeInstruct),0);
                 }*/
 
-                //sockets[thisIndex]=sockets[g_count--];
+                sockets[thisIndex]=sockets[g_count--];
             }
             printf("a socket is closed.\n");
             return 0;
@@ -244,7 +279,7 @@ unsigned int _stdcall ThreadFun(void* index){
         }else if(strcmp(revData,"#ListU")==0){
             char userList[1000];
             getUserList(userList);
-            send(sockets[thisIndex].socket, userList, strlen(userList), 0);
+            send(new_socket, userList, strlen(userList), 0);
             userList[0]=0x00;
             continue;
         }else if(is_begin_with(revData,"#Private")==1){
@@ -263,7 +298,7 @@ unsigned int _stdcall ThreadFun(void* index){
             }
             if(strlen(name)==0){
                 char* errorSend="Sorry, Please input name after #Private (there should be a space after Private).";
-                send(sockets[thisIndex].socket, errorSend, strlen(errorSend), 0);
+                send(new_socket, errorSend, strlen(errorSend), 0);
             }else{
                 name[strlen(name)-1]=0x00;
                 int j;
@@ -273,11 +308,11 @@ unsigned int _stdcall ThreadFun(void* index){
                 }
                 if(j>g_count){
                     char* errorSend="Sorry, I can't find name in user list.";
-                    send(sockets[thisIndex].socket, errorSend, strlen(errorSend), 0);
+                    send(new_socket, errorSend, strlen(errorSend), 0);
                 }else{
                     private_index=j;
                     char* message="Success be private.";
-                    send(sockets[thisIndex].socket, message, strlen(message), 0);
+                    send(new_socket, message, strlen(message), 0);
                 }
             }
 
@@ -285,7 +320,7 @@ unsigned int _stdcall ThreadFun(void* index){
         }else if(strcmp(revData,"#Public")==0){
             private_index=-1;
             char* message="Success be public.";
-            send(sockets[thisIndex].socket, message, strlen(message), 0);
+            send(new_socket, message, strlen(message), 0);
             continue;
         }else if(is_begin_with(revData,"#Ring")==1){
             printf("I got Ring.\n");
@@ -301,21 +336,21 @@ unsigned int _stdcall ThreadFun(void* index){
             }
             if(strlen(name)==0){
                 char* errorSend="Sorry, Please input name after #Ring (there should be a space after Ring).";
-                send(sockets[thisIndex].socket, errorSend, strlen(errorSend), 0);
+                send(new_socket, errorSend, strlen(errorSend), 0);
             }else{
                 name[strlen(name)-1]=0x00;
                 int i;
                 for(i=0;i<=g_count;i++){
                     if(strcmp(sockets[i].name,name)==0){
                         char* message="He\\She is online.";
-                        send(sockets[thisIndex].socket, message, strlen(message), 0);
+                        send(new_socket, message, strlen(message), 0);
                     }
                 }
                 if(i<=g_count)continue;
                 strcpy(sockets[thisIndex].ring,name);
 
                 char* message="Success save ring.";
-                send(sockets[thisIndex].socket, message, strlen(message), 0);
+                send(new_socket, message, strlen(message), 0);
             }
             continue;
         }else if(is_begin_with(revData,"#TrfU")==1){
@@ -329,13 +364,13 @@ unsigned int _stdcall ThreadFun(void* index){
             strcat(fileName,tempName);
             if(!access(fileName,0)){
                 char * wrongMessage="Sorry, file exits.Please change your fileName.";
-                send(sockets[thisIndex].socket, wrongMessage, strlen(wrongMessage), 0);
+                send(new_socket, wrongMessage, strlen(wrongMessage), 0);
             }else{
                 char sendAck[100];
                 sendAck[0]=0x00;
                 strcat(sendAck,"UPLOAD_ACK:");
                 strcat(sendAck,tempName);
-                send(sockets[thisIndex].socket, sendAck, strlen(sendAck), 0);
+                send(new_socket, sendAck, strlen(sendAck), 0);
                 printf("try to save file %s\n",tempName);
                 FILE* fp;
                 char data[FILE_DATA_MAX];
@@ -349,16 +384,16 @@ unsigned int _stdcall ThreadFun(void* index){
                 while(1){
                     memset(data,0,sizeof(data));
                     //char * temp[FILE_DATA_MAX];
-                    int length=recv(sockets[thisIndex].socket,data,sizeof(data),0);
+                    int length=recv(new_socket,data,sizeof(data),0);
                     if(length==SOCKET_ERROR){
                         char * message="Fail to save file.It may be caused by incomplete file.";
                         printf("%s\n",message);
-                        send(sockets[thisIndex].socket,message,strlen(message),0);
+                        send(new_socket,message,strlen(message),0);
                         break;
                     }else if(strcmp(data,file_end_ack)==0){
                         char * message="Save file success.";
                         printf("%s\n",message);
-                        send(sockets[thisIndex].socket,message,strlen(message),0);
+                        send(new_socket,message,strlen(message),0);
                         break;
                     }else{
                         if(fwrite(data,1,length,fp)<length){
@@ -380,7 +415,7 @@ unsigned int _stdcall ThreadFun(void* index){
             strcat(path,"file");
             viewFiles(path,result);
             //printf("files:%s\n",result);
-            send(sockets[thisIndex].socket,result,strlen(result),0);
+            send(new_socket,result,strlen(result),0);
             continue;
         }else if(is_begin_with(revData,"#TrfD")==1){
 
@@ -401,14 +436,14 @@ unsigned int _stdcall ThreadFun(void* index){
             fp=fopen(fileName,"rb");
             if(fp==NULL){
                 char* message="file dose not exist.";
-                send(sockets[thisIndex].socket,message,strlen(message),0);
+                send(new_socket,message,strlen(message),0);
                 printf("%s\n",message);
                 continue;
             }
            // char * message="FILE_SEND";
-            send(sockets[thisIndex].socket,FILE_SEND,strlen(FILE_SEND),0);
+            send(new_socket,FILE_SEND,strlen(FILE_SEND),0);
             Sleep(500);
-            send(sockets[thisIndex].socket,p,strlen(p),0);
+            send(new_socket,p,strlen(p),0);
 
             while(1){
                 memset((void *)data,0,sizeof(data));
@@ -416,17 +451,17 @@ unsigned int _stdcall ThreadFun(void* index){
                 int length=fread(data,1,sizeof(data),fp);
                 if(length==0){
                     Sleep(500);
-                    send(sockets[thisIndex].socket,file_end_ack,strlen(file_end_ack),0);
+                    send(new_socket,file_end_ack,strlen(file_end_ack),0);
                     printf("File send Success\n");
                     break;
                 }
                 //printf("%s\n",data);
-                int ret=send(sockets[thisIndex].socket,data,length,0);
+                int ret=send(new_socket,data,length,0);
                 //putchar('.');
                 if(ret==SOCKET_ERROR){
                     char * message="Failed to send file.It may be caused by incomplete file.";
                     printf("%s\n",message);
-                    send(sockets[thisIndex].socket,message,strlen(message),0);
+                    send(new_socket,message,strlen(message),0);
                     break;
                 }
             }
@@ -529,4 +564,23 @@ void viewFiles(char * path,char * result){
             }
         }while( _findnext(File_Handle,&files)==0);
     }
+}
+int findThisIndex(unsigned address){
+    for(int i=0;i<=g_count;i++){
+        if(address==sockets[i].address){
+            return i;
+        }
+    }
+    return -1;
+}
+void saveLog(char * message){
+    FILE* fp;
+
+    fp=fopen("log.txt","a+");
+    if(fp==NULL){
+        printf("fail to save log\n");
+        return;
+    }
+    fputs(message, fp);
+    fclose(fp);
 }

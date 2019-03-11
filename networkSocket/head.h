@@ -13,6 +13,7 @@
 #define FILE_DATA_MAX 8092
 #include <sqlite3.h>
 #include <io.h>
+#include<time.h>
 /*
 struct sockaddr_in
 {
