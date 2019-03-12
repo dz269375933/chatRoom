@@ -8,13 +8,16 @@
 #include <ctype.h>
 char name[20];
 int is_begin_with(const char* s1,char* s2);
+//判断是否含有空格，防止一些意外的错误
 int has_space(char *s);
+//同服务器一直的一些确认码，因为监听和发送不在一个线程里
 const char * file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
 const char * FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
+//监听的线程
 unsigned int _stdcall Client_thread(void* socket);
 
 
-
+//监听的线程
 unsigned int _stdcall Client_thread(void* s){
     SOCKET socket=*(SOCKET*)s;
     while(1){
@@ -30,7 +33,8 @@ unsigned int _stdcall Client_thread(void* s){
             WSACleanup();
             return -1;
 		}
-
+        //如果接受到以UPLOAD_ACK的消息，表示主线程发送过上传文件的指令
+        //服务器已经确认可以传输了，子线程将数据发送
 		if(is_begin_with(recData,"UPLOAD_ACK")){
             char *fileName=NULL;
             strtok(recData,":");
@@ -39,7 +43,7 @@ unsigned int _stdcall Client_thread(void* s){
                 printf("receive file name error.\n");
                 continue;
             }else{
-                //printf("%s\n",p);
+                //文件指针用于传输文件
                 FILE *fp;
                 char data[FILE_DATA_MAX];
 
@@ -51,16 +55,17 @@ unsigned int _stdcall Client_thread(void* s){
 
                 while(1){
                     memset((void *)data,0,sizeof(data));
-                    //printf("sss\n");
+                    //读取文件数据
                     int length=fread(data,1,sizeof(data),fp);
                     if(length==0){
                         Sleep(500);
+                        //如果上传完成，发送给服务器确认码，服务器即可退出监听的循环
                         send(socket,file_end_ack,strlen(file_end_ack),0);
                         printf("File send Success\n");
 
                         break;
                     }
-                    //printf("%s\n",data);
+                    //发送给服务器数据
                     int ret=send(socket,data,length,0);
                     //putchar('.');
                     if(ret==SOCKET_ERROR){
@@ -72,10 +77,11 @@ unsigned int _stdcall Client_thread(void* s){
                 continue;
             }
 		}else if(strcmp(recData,FILE_SEND)==0){
-		    //printf("%s\n",recData);
+		    //同理，表示主线程发出过上传文件的指令
             printf("try to save file...\n");
             char fileName[100];
             fileName[0]=0x00;
+            //服务器发出FILE_SEND之后还会再发出文件名，用于子线程创建文件
             int ret = recv(socket, fileName, 100, 0);
             if(ret==SOCKET_ERROR){
                 printf("failed to receive filename.\n");
@@ -92,7 +98,7 @@ unsigned int _stdcall Client_thread(void* s){
             printf("start to save file...\n");
 
             while(1){
-                //printf("receive file.\n");
+
                 memset(data,0,sizeof(data));
                 //char * temp[FILE_DATA_MAX];
                 int length=recv(socket,data,sizeof(data),0);
@@ -101,12 +107,13 @@ unsigned int _stdcall Client_thread(void* s){
                     printf("%s\n",message);
                     //send(socket,message,strlen(message),0);
                     break;
+                    //服务器通知客户端传输完毕，客户端退出监听
                 }else if(strcmp(data,file_end_ack)==0){
                     char * message="Save file success.";
                     printf("%s\n",message);
-                    //send(socket,message,strlen(message),0);
                     break;
                 }else{
+                    //如果都不是，则将数据写入到文件里
                     if(fwrite(data,1,length,fp)<length){
                         printf("Write file failed.\n");
                         break;
@@ -117,6 +124,7 @@ unsigned int _stdcall Client_thread(void* s){
             fclose(fp);
             continue;
 		}
+		//如果均不是以上确认码或者指令，说明就是服务器发过来的数据，直接显示即可
 		printf("%s\n",recData);
 
 	}
@@ -152,9 +160,8 @@ int main(int argc, char* argv[])
 		closesocket(sclient);
 		return 0;
 	}
-	//for (int i = 0; i < 50; i++)
-	//{
 
+    //用于验证登录的循环
     while(1){
         printf("please input your name :");
         gets(name);
@@ -171,6 +178,7 @@ int main(int argc, char* argv[])
         if (ret > 0)
         {
             recData[ret] = 0x00;
+            //如果接收到确认，说明登录成功，跳出循环
             if(strcmp(recData,"ACK")==0){
                 printf("Welcome!\n");
                 break;
@@ -184,18 +192,20 @@ int main(int argc, char* argv[])
         }
     }
 
-
+    //启动监听线程
     HANDLE handle=_beginthreadex(NULL, 0, &Client_thread,(void *)&sclient, 0,NULL);
 	while(1){
         char sendData[USER_SEND_MAX];
         //printf("$%s: ",name);
         gets(sendData);
+        //如果是关闭指令，将子线程关闭，再将socket关闭
         if(strcmp(sendData,"#Exit")==0){
             TerminateThread(handle , 0 );
             send(sclient,sendData,strlen(sendData),0);
             closesocket(sclient);
             WSACleanup();
             break;
+            //如果是上传指令，先在client判断指令是否正确
         }else if(is_begin_with(sendData,"#TrfU")==1){
             if((strlen(sendData)<=6) | (has_space(sendData)==0)){
                 printf("Please input fileName after a blank space,\n");
@@ -206,6 +216,7 @@ int main(int argc, char* argv[])
             char *fileName;
             strtok(fileNameMessage," ");
             fileName=strtok(NULL," ");
+            //错误的指令，给用户提示
             if((fileName==NULL) | (strlen(fileName)==0)){
                 printf("Please input fileName after a blank space,\n");
                 continue;
@@ -219,11 +230,14 @@ int main(int argc, char* argv[])
                 continue;
             }
             fclose(fp);
+            //如果文件存在，通知服务器开始接收文件，服务器确认文件没有同名后，发送确认码
+            //子线程开始传输文件
             send(sclient, sendData, strlen(sendData), 0);
             continue;
 
 
         }else if(strcmp(sendData,"#Help")==0){
+            //显示指令列表
              char * message="----------------------\n"
             "#Exit\tExit\n"
             "#Help\tList command\n"
@@ -238,7 +252,7 @@ int main(int argc, char* argv[])
             printf("%s",message);
             continue;
         }
-        //printf("sendData:%s",sendData);
+        //如果均不是以上指令，说明就是发送的消息
 		send(sclient, sendData, strlen(sendData), 0);
 	}
 
