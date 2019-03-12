@@ -1,5 +1,27 @@
+//引入需要的头文件，包含一些定义的常量
 #include <head.h>
 
+
+//查找path下所有文件，并将结果保存到result，用于#ListF指令
+void viewFiles(char * path,char * result);
+//子线程查找自身线程所在sockets的index
+int findThisIndex(unsigned address);
+//将所需要的日志信息保存到Log文件中
+void saveLog(char * message);
+//根据sockets中的信息，查找在线用户，结果保存到userList的指针中
+void getUserList(char userList[]);
+//每一个子线程所需要做的工作，实现功能的主要部分
+unsigned int _stdcall ThreadFun();
+//工具函数，用于判断str1是否由str2开头，如果是返回1不是返回0
+int is_begin_with(const char * str1,char *str2);
+//初始化sqlite数据库，包括删除表和插入新表
+int insertData();
+
+//sockets每一个的元素的结构体，name存储当前index的用户名
+//address存储当前线程的ID，用于子线程查找
+//socket保存当前socket
+//ring保存该用户想要记录的提醒上线的用户名
+//如当前是dz，ring了han，当han上线时，给dz发消息，han is connented。
 struct SocketObject{
     char name[30];
     unsigned address;
@@ -12,26 +34,24 @@ struct RingObject{
     struct RingObject *next;
 };
 */
-int g_count;
-const char* FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
-char* change_index="K3LvzpYnSQ27wtwM";
-
+//最重要的全局变量sockets，相当于线程池，管理子线程的信息
 struct SocketObject sockets[THREAD_NUM];
-void viewFiles(char * path,char * result);
-int findThisIndex(unsigned address);
-void saveLog(char * message);
+//用于记录有多少线程（socket）在线
+int g_count;
+//服务器发送给client用于确认接收文件的随机码，在client中有相应
+const char* FILE_SEND="3q23mgU9hAltcjUMAMOtc@DA*qPgESH";
+//
+//char* change_index="K3LvzpYnSQ27wtwM";
 
-void getUserList(char userList[]);
-unsigned int _stdcall ThreadFun();
-int is_begin_with(const char * str1,char *str2);
-int insertData();
 
 
 
 void getUserList(char userList[]){
+    //结构化用户列表
     strcat(userList,"users\n----------\n");
     int i=0;
     for(i=0;i<=g_count;i++){
+        //所有index小于等于g_count的均为在线对象
         strcat(userList,sockets[i].name);
         strcat(userList,"\n");
     }
@@ -39,22 +59,15 @@ void getUserList(char userList[]){
 }
 int main(int arg,char *argv[])
 {
+    //以下都是基本的初始化socket
     WSADATA wsa;
     SOCKET s;
     struct sockaddr_in server,client;
     int c;
 
-    //char* message;
-    //HANDLE handle[THREAD_NUM];
     g_count=-1;
-    /*
-    struct sockaddr_in server;
-    char* message,server_reply[2000];
-    int recv_size;
-    */
 
-    //database
-
+    //初始化sqlite数据库
     if(insertData()==0){
         return 0;
     }
@@ -102,6 +115,7 @@ int main(int arg,char *argv[])
     c=sizeof(struct sockaddr_in);
     //signal(SIGPIPE,SIG_IGN);
     while(1){
+            //等待clientsocket建立连接
         SOCKET new_socket = accept(s,(struct sockaddr *)&client,&c);
         if(new_socket == INVALID_SOCKET || g_count>=THREAD_NUM){
             printf("accept error\n");
@@ -109,54 +123,64 @@ int main(int arg,char *argv[])
             //closesocket(new_socket);
             break;
         }
+    //用于保存日志中所需用的时间
         time_t rawtime;
         struct tm * timeinfo;
         time(&rawtime);
         timeinfo=localtime(&rawtime);
+        //用于保存client的ip地址
         char *ipv4=inet_ntoa(client.sin_addr);
         printf("@%s connected...\n",ipv4);
         char saveMessage[50];
         sprintf(saveMessage,("Time:%s\t@%s connected\r\n"),asctime(timeinfo),ipv4);
         printf("%s",saveMessage);
+        //如果连接将信息保存到log.txt中
         saveLog(saveMessage);
 
 
+        //存储线程Id的无符号int
         unsigned threadAddress;
+        //创建线程
         _beginthreadex(NULL, 0, (unsigned int (__stdcall *)(void *))ThreadFun, NULL, 0, &threadAddress);
+        //将该线程的信息保存到全局变量sockets中
         struct SocketObject socketObject;
         socketObject.address=threadAddress;
         socketObject.socket=new_socket;
         sockets[++g_count]=socketObject;
-
-
     }
     WSACleanup();
     return 0;
 }
+//子线程，主要实现功能部分
 unsigned int _stdcall ThreadFun(){
+    //子线程获取自身线程ID用于查找sockets中自身的信息
     unsigned thisId=GetCurrentThreadId();
+    //上传和下载文件的目录，全部都从file文件夹下读取和保存
     const char* fileTitle="file/";
+    //服务器用于确认文件传输完毕，停止写入文件的随机码
     const char* file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
+    //记录与哪一个socket private通信
     int private_index=-1;
+    //数据库指针，用于确认用户帐号密码
     sqlite3 *db;
-    //char *err_msg=0;
+    //打开数据库
     int rc = sqlite3_open("dzData", &db);
-    //printf("\nRC open Database = %d\n",rc);
+
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
         return 0;
     }
 
-    //int thisIndex=*(int *)index;
+    //获取本线程所在的socket地址
     SOCKET new_socket=sockets[findThisIndex(thisId)].socket;
+    //保存用户名和密码
     char nameArray[20];
     char password[20];
 
     while(1){
         int ret = recv(new_socket, nameArray, 20, 0);
         if(ret <= 0){
-
             printf("receive error.Closing thread and socket\n");
             closesocket(new_socket);
             WSACleanup();
@@ -173,6 +197,7 @@ unsigned int _stdcall ThreadFun(){
             password[ret]=0x00;
 
             //search database
+            //查找数据库，验证帐号密码
             sqlite3_stmt * res;
             char *sql = "SELECT Name,Password FROM User WHERE Name = @id";
             int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);
@@ -183,21 +208,22 @@ unsigned int _stdcall ThreadFun(){
             } else {
                 fprintf(stderr, "Failed to execute statement: %s\n", sqlite3_errmsg(db));
             }
-            //printf("input name :%s\n",nameArray);
-            //printf("input password:%s\n",password);
+
             int step =sqlite3_step(res);
+            //将登录信息保存到日志中用到的时间
             time_t rawtime;
             struct tm * timeinfo;
             time ( &rawtime );
             timeinfo = localtime ( &rawtime );
             if(step!=100 || strcmp((const char *)password,(const char *)sqlite3_column_text(res, 1))!=0){
+                    //如果登陆失败，保存信息，返回信息给客户端
                 char * message="Wrong username or password.";
                 send(new_socket, message, strlen(message), 0);
                 char saveLogMessage[100];
                 sprintf(saveLogMessage,("Time:%s\t%s login failed\n"),asctime(timeinfo),nameArray);
                 saveLog(saveLogMessage);
             }else{
-                //printf("ACK\n",sqlite3_column_text(res, 1));
+                //如果登陆成功，保存信息，返回ACK给客户端
                 char * returnAck="ACK";
                 send(new_socket, returnAck, strlen(returnAck), 0);
                 char saveLogMessage[100];
@@ -210,9 +236,11 @@ unsigned int _stdcall ThreadFun(){
     //end loop
 
 
-    //broadcast ring;
+
+    //将登录用户的name保存到sockets中
     strcpy(sockets[findThisIndex(thisId)].name,nameArray);
     int k;
+    //将该用户登陆信息广播给ring了该用户的用户
     for(k=0;k<=g_count;k++){
         if(strcmp(sockets[k].ring,nameArray)==0){
             char  message[200];
@@ -224,8 +252,8 @@ unsigned int _stdcall ThreadFun(){
             send(sockets[k].socket, message, strlen(message), 0);
         }
     }
-    //sockets[thisIndex].name=nameArray;
 
+    //主要监听循环，非常大
     while(1){
         char revData[USER_SEND_MAX];
         revData[0]=0x00;
@@ -238,7 +266,11 @@ unsigned int _stdcall ThreadFun(){
         }
         revData[ret] = 0x00;
         int thisIndex=findThisIndex(thisId);
+
+        //C语言只能挨个判断，不能用switch，所以写了很多ifelse，无奈之举
         if(strcmp(revData,"#Exit")==0){
+            //如果是#Exit指令
+            //记录时间
             time_t rawtime;
             struct tm * timeinfo;
             time ( &rawtime );
@@ -247,49 +279,32 @@ unsigned int _stdcall ThreadFun(){
             sprintf(saveLogMessage,("Time:%s%s log out.\n"),asctime(timeinfo),sockets[thisIndex].name);
             saveLog(saveLogMessage);
             if(thisIndex==g_count){
+                //如果当前socket存在于sockets最后的位置，则直接将g_count-1即可
+                //退出这个while循环这个线程就关闭了
+                //socket关闭由client进行
                 g_count--;
             }else{
-                /*
-                char changeInstruct[30];
-                changeInstruct[0]=0x00;
-                strcat(changeInstruct,change_index);
-                strcat(changeInstruct,":");
-                char iToChar[2];
-                itoa(thisIndex,iToChar,10);
-                strcat(changeInstruct,iToChar);
-                for(int i=0;i<g_count;i++){
-                   send(sockets[i].socket,changeInstruct,strlen(changeInstruct),0);
-                }*/
-
+                //如果当前socket存在于中间，则将最后一个socket放到当前的index下
                 sockets[thisIndex]=sockets[g_count--];
             }
             printf("a socket is closed.\n");
             return 0;
-        /*
-        }else if(is_begin_with(revData,change_index)==1){
-            if(thisIndex==g_count){
-                //char tempIndex[10];
-                strtok(revData,":");
-                char *p=strtok(NULL,":");
-                int newIndex=atoi((const char*)p);
-                printf("%d index change to %d\n",thisIndex,newIndex);
-                thisIndex=newIndex;
-            }
-            continue;*/
+
         }else if(strcmp(revData,"#ListU")==0){
+            //显示用户
             char userList[1000];
             getUserList(userList);
             send(new_socket, userList, strlen(userList), 0);
             userList[0]=0x00;
             continue;
         }else if(is_begin_with(revData,"#Private")==1){
-            //printf(revData);
-            //printf("|");
+            //私聊
             printf("I got private.\n");
             char name[50];
             name[0]=0x00;
             char *p;
             strtok(revData," ");
+        //提取#Private <username>空格之后的username，允许名字中含有空格（但未测试）
             while((p=strtok(NULL," "))!=NULL){
                     //printf(p);
                 //printf("\n");
@@ -302,14 +317,17 @@ unsigned int _stdcall ThreadFun(){
             }else{
                 name[strlen(name)-1]=0x00;
                 int j;
-                printf(name);
+                //查找该用户是否在线
                 for(j=0;j<=g_count;j++){
                     if(strcmp(sockets[j].name,name)==0)break;
                 }
                 if(j>g_count){
+                        //for循环跑完，说明用户不在线
                     char* errorSend="Sorry, I can't find name in user list.";
                     send(new_socket, errorSend, strlen(errorSend), 0);
                 }else{
+                    //如果小于等于g_count,说明找到了，保存index到这个socket中
+                    //此时此刻我忽然意识到这里有个Bug，但是我不想管了
                     private_index=j;
                     char* message="Success be private.";
                     send(new_socket, message, strlen(message), 0);
@@ -318,11 +336,13 @@ unsigned int _stdcall ThreadFun(){
 
             continue;
         }else if(strcmp(revData,"#Public")==0){
+            //将private标记为-1，即可发出公开消息
             private_index=-1;
             char* message="Success be public.";
             send(new_socket, message, strlen(message), 0);
             continue;
         }else if(is_begin_with(revData,"#Ring")==1){
+            //ring指令
             printf("I got Ring.\n");
             char name[50];
             name[0]=0x00;
@@ -340,13 +360,17 @@ unsigned int _stdcall ThreadFun(){
             }else{
                 name[strlen(name)-1]=0x00;
                 int i;
+                //查找该用户是否已经在线
                 for(i=0;i<=g_count;i++){
                     if(strcmp(sockets[i].name,name)==0){
                         char* message="He\\She is online.";
                         send(new_socket, message, strlen(message), 0);
+                        break;
                     }
                 }
+                //break只能跳出一层循环，所以这里还需要判断再跳出循环
                 if(i<=g_count)continue;
+                //如果i大于g_count，说明用户不在线，将ring的名字保存到该socket中
                 strcpy(sockets[thisIndex].ring,name);
 
                 char* message="Success save ring.";
@@ -354,24 +378,30 @@ unsigned int _stdcall ThreadFun(){
             }
             continue;
         }else if(is_begin_with(revData,"#TrfU")==1){
+            //传输文件指令
             printf("I got file.\n");
             char fileName[50];
             fileName[0]=0x00;
             char *tempName=NULL;
             strtok(revData," ");
             tempName=strtok(NULL," ");
+            //加入文件头file/
             strcat(fileName,fileTitle);
             strcat(fileName,tempName);
+            //判断文件是否存在，access是C语言的函数
             if(!access(fileName,0)){
                 char * wrongMessage="Sorry, file exits.Please change your fileName.";
                 send(new_socket, wrongMessage, strlen(wrongMessage), 0);
             }else{
+                //如果文件存在
                 char sendAck[100];
                 sendAck[0]=0x00;
                 strcat(sendAck,"UPLOAD_ACK:");
                 strcat(sendAck,tempName);
+                //返回给client 一个以UPLOAD_ACK开头的消息，客户端接收之后可以开始发送文件数据
                 send(new_socket, sendAck, strlen(sendAck), 0);
                 printf("try to save file %s\n",tempName);
+                //保存文件，理论上应该写个函数包装一下，然而我懒了
                 FILE* fp;
                 char data[FILE_DATA_MAX];
                 data[0]=0x00;
@@ -383,7 +413,7 @@ unsigned int _stdcall ThreadFun(){
                 printf("start to save file...\n");
                 while(1){
                     memset(data,0,sizeof(data));
-                    //char * temp[FILE_DATA_MAX];
+                    //接收文件数据
                     int length=recv(new_socket,data,sizeof(data),0);
                     if(length==SOCKET_ERROR){
                         char * message="Fail to save file.It may be caused by incomplete file.";
@@ -391,34 +421,37 @@ unsigned int _stdcall ThreadFun(){
                         send(new_socket,message,strlen(message),0);
                         break;
                     }else if(strcmp(data,file_end_ack)==0){
+                        //如果client发送file_end_ack表名文件已经传输完毕了
+                        //没想到更好的方法来让服务器知道文件传输完毕
                         char * message="Save file success.";
                         printf("%s\n",message);
                         send(new_socket,message,strlen(message),0);
                         break;
                     }else{
+                        //如果收到的不是结束ack，则向文件里写入数据
                         if(fwrite(data,1,length,fp)<length){
                             printf("Write Failed.\n");
                             break;
                         }
                     }
                 }
-                //printf("finish.\n");
+                //关闭文件指针
                 fclose(fp);
             }
             continue;
             // end #TrfU
         }else if(strcmp(revData,"#ListF")==0){
+            //显示文件列表
             char path[200];
             path[0]=0x00;
             char result[1024];
             result[0]=0x00;
             strcat(path,"file");
             viewFiles(path,result);
-            //printf("files:%s\n",result);
             send(new_socket,result,strlen(result),0);
             continue;
         }else if(is_begin_with(revData,"#TrfD")==1){
-
+            //下载文件指令，与上传很类似
             char  fileName[50];
             fileName[0]=0x00;
             char * p=NULL;
@@ -435,27 +468,32 @@ unsigned int _stdcall ThreadFun(){
 
             fp=fopen(fileName,"rb");
             if(fp==NULL){
+                //如果文件指针打开失败，说明文件不存在，返回给client
                 char* message="file dose not exist.";
                 send(new_socket,message,strlen(message),0);
                 printf("%s\n",message);
                 continue;
             }
-           // char * message="FILE_SEND";
+            //通知client可以开始上传文件了
             send(new_socket,FILE_SEND,strlen(FILE_SEND),0);
+            //此处如果不延迟发送，socket可能会将两个信息合并在一起发送
             Sleep(500);
+            //返回给client文件名,client需要用这个名字创建文件
             send(new_socket,p,strlen(p),0);
 
             while(1){
                 memset((void *)data,0,sizeof(data));
-                //printf("sss\n");
+
                 int length=fread(data,1,sizeof(data),fp);
+                //fread返回参数为读到该文件数组的长度，如果为零说明文件读完了
                 if(length==0){
+                    //与之前sleep同理，不用会把两个socket同时传
                     Sleep(500);
                     send(new_socket,file_end_ack,strlen(file_end_ack),0);
                     printf("File send Success\n");
                     break;
                 }
-                //printf("%s\n",data);
+                //将文件发送给client
                 int ret=send(new_socket,data,length,0);
                 //putchar('.');
                 if(ret==SOCKET_ERROR){
@@ -470,17 +508,20 @@ unsigned int _stdcall ThreadFun(){
         }
 
 
-        //printf("%s\n",revData);
+        //如果均不是以上指令，则将消息广播出去
         int i;
         char broadcast[BROADCAST_MAX];
+        //结构化广播的消息
         broadcast[0]=0x00;
         strcat(broadcast,"From ");
         strcat(broadcast,nameArray);
         strcat(broadcast,":");
         strcat(broadcast,revData);
         if(private_index>=0){
+                //如果是私聊，只发给一个用户
             send(sockets[private_index].socket, broadcast, strlen(broadcast), 0);
         }else{
+            //不是私聊，广播给在线的用户
             for(i=0;i<=g_count;i++){
             //printf("%s\n",sockets[i].name);
             //printf("%p\n",sockets[i].socket);
@@ -494,6 +535,7 @@ unsigned int _stdcall ThreadFun(){
 }
 int is_begin_with(const char * str1,char *str2)
 {
+//判断str1是否以str2开头
   if(str1 == NULL || str2 == NULL)
     return -1;
   int len1 = strlen(str1);
@@ -512,6 +554,7 @@ int is_begin_with(const char * str1,char *str2)
   return 1;
 }
 int insertData(){
+    //创建数据库文件，文件名为dzData
     sqlite3 *db;
     char *err_msg=0;
     int rc = sqlite3_open("dzData", &db);
@@ -545,6 +588,7 @@ int insertData(){
 
 }
 void viewFiles(char * path,char * result){
+    //根据path路径查找文件列表，并将结构化信息保存到result指针
     struct _finddata_t files;
     //char cFileAddr[300];
     long File_Handle;
@@ -566,6 +610,7 @@ void viewFiles(char * path,char * result){
     }
 }
 int findThisIndex(unsigned address){
+    //子线程寻找当前所在的index
     for(int i=0;i<=g_count;i++){
         if(address==sockets[i].address){
             return i;
@@ -574,6 +619,7 @@ int findThisIndex(unsigned address){
     return -1;
 }
 void saveLog(char * message){
+    //保存日志
     FILE* fp;
 
     fp=fopen("log.txt","a+");
