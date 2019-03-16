@@ -293,9 +293,10 @@ unsigned int _stdcall ThreadFun(){
         }else if(strcmp(revData,"#ListU")==0){
             //ÏÔÊ¾ÓÃ»§
             char userList[1000];
+            userList[0]=0x00;
             getUserList(userList);
             send(new_socket, userList, strlen(userList), 0);
-            userList[0]=0x00;
+
             continue;
         }else if(is_begin_with(revData,"#Private")==1){
             //Ë½ÁÄ
