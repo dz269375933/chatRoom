@@ -446,6 +446,7 @@ unsigned int _stdcall ThreadFun(){
             path[0]=0x00;
             char result[1024];
             result[0]=0x00;
+            strcat(result,"Files on server:");
             strcat(path,"file");
             viewFiles(path,result);
             send(new_socket,result,strlen(result),0);

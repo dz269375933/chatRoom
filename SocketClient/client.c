@@ -1,7 +1,8 @@
 #include <winsock2.h>
 #include <windows.h>
-#include <STDIO.H>
+#include <stdio.h>
 #include <stdlib.h>
+#include<process.h>
 #define USER_SEND_MAX 280
 #define BROADCAST_MAX 500
 #define FILE_DATA_MAX 8092
@@ -193,7 +194,7 @@ int main(int argc, char* argv[])
     }
 
     //Æô¶¯¼àÌýÏß³Ì
-    HANDLE handle=_beginthreadex(NULL, 0, &Client_thread,(void *)&sclient, 0,NULL);
+    HANDLE handle=(HANDLE)_beginthreadex(NULL, 0, (unsigned int (__stdcall *)(void *))Client_thread,(void *)&sclient, 0,NULL);
 	while(1){
         char sendData[USER_SEND_MAX];
         //printf("$%s: ",name);
