@@ -160,7 +160,7 @@ unsigned int _stdcall ThreadFun(){
     //服务器用于确认文件传输完毕，停止写入文件的随机码
     const char* file_end_ack="BDd8E@XLj605Dsx0zzveRJNhy0qKTQ2T";
     //记录与哪一个socket private通信
-    int private_index=-1;
+    unsigned private_index=0;
     //数据库指针，用于确认用户帐号密码
     sqlite3 *db;
     //打开数据库
@@ -328,8 +328,7 @@ unsigned int _stdcall ThreadFun(){
                     send(new_socket, errorSend, strlen(errorSend), 0);
                 }else{
                     //如果小于等于g_count,说明找到了，保存index到这个socket中
-                    //此时此刻我忽然意识到这里有个Bug，但是我不想管了
-                    private_index=j;
+                    private_index=sockets[j].address;
                     char* message="Success be private.";
                     send(new_socket, message, strlen(message), 0);
                 }
@@ -337,8 +336,8 @@ unsigned int _stdcall ThreadFun(){
 
             continue;
         }else if(strcmp(revData,"#Public")==0){
-            //将private标记为-1，即可发出公开消息
-            private_index=-1;
+            //将private标记为0，即可发出公开消息
+            private_index=0;
             char* message="Success be public.";
             send(new_socket, message, strlen(message), 0);
             continue;
@@ -519,9 +518,17 @@ unsigned int _stdcall ThreadFun(){
         strcat(broadcast,nameArray);
         strcat(broadcast,":");
         strcat(broadcast,revData);
-        if(private_index>=0){
+        if(private_index>0){
                 //如果是私聊，只发给一个用户
-            send(sockets[private_index].socket, broadcast, strlen(broadcast), 0);
+               // printf("%d,private address:\n",private_index);
+                for(int i=0;i<=g_count;i++){
+                    //printf("%d\n",sockets[i].address);
+                    if(sockets[i].address==private_index){
+                        send(sockets[i].socket, broadcast, strlen(broadcast), 0);
+                        break;
+                    }
+                }
+
         }else{
             //不是私聊，广播给在线的用户
             for(i=0;i<=g_count;i++){
@@ -530,8 +537,6 @@ unsigned int _stdcall ThreadFun(){
             send(sockets[i].socket, broadcast, strlen(broadcast), 0);
             }
         }
-
-        broadcast[0]=0x00;
 
     }
 }
